@@ -1,3 +1,4 @@
+package com.javacodegeeks.examples.rxjavaexample;
 
 import static org.junit.Assert.*;
 

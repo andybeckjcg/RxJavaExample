@@ -12,8 +12,11 @@ import java.util.concurrent.TimeUnit;
 import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
 import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.apache.http.nio.client.methods.HttpAsyncMethods;
+import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.web.client.RestTemplate;
@@ -23,9 +26,11 @@ import io.reactivex.Flowable;
 import io.reactivex.FlowableEmitter;
 import io.reactivex.FlowableOnSubscribe;
 import io.reactivex.Observable;
+import io.reactivex.ObservableSource;
 import io.reactivex.functions.Action;
 import io.reactivex.functions.BiFunction;
 import io.reactivex.functions.Consumer;
+import io.reactivex.functions.Function;
 import io.reactivex.schedulers.Schedulers;
 import rx.apache.http.ObservableHttp;
 import rx.apache.http.ObservableHttpResponse;
@@ -34,64 +39,152 @@ import rx.functions.Func1;
 
 public class RxJavaExampleAdvanced {
 
+	private static Logger logger = LoggerFactory.getLogger(RxJavaExampleAdvanced.class);
+
 	static int counter = 0;
 
 	public static void simpleAsync() {
 		Flowable.create((FlowableEmitter<String> s) -> {
 			try {
-				System.out.println("Executing async flowable.");
+				logger.info("Executing async flowable.");
 				Thread.sleep(1000);
-				System.out.println("Finished async flowable.");
+				logger.info("Finished async flowable.");
 			} catch (Exception e) {
 			}
 			s.onComplete();
 		}, BackpressureStrategy.BUFFER).subscribeOn(Schedulers.newThread()).subscribe();
 
-		System.out.println("Print finished async method.");
-		try {
-			Thread.sleep(10000);
-		} catch (InterruptedException e) {
-			e.printStackTrace();
-		}
+		logger.info("Print finished async method.");
+	}
+
+	public static void simpleAsyncMulti() {
+		Observable.just(1, 2)
+				.flatMap(item -> Observable.just(item).subscribeOn(Schedulers.newThread())
+						.doOnNext(i -> System.out.println("Thread:" + Thread.currentThread())))
+				.subscribe(System.out::println);
+	}
+
+	public static void simpleArrayIo() {
+		logger.info("Thread {}", Thread.currentThread().getName());
+		Flowable.fromArray(1, 2, 3, 4).subscribeOn(Schedulers.io()).subscribe(
+				i -> logger.info("Thread {}, Integer {}", Thread.currentThread().getName(), i.intValue()),
+				e -> logger.error("failed to process"));
+	}
+
+	public static void simpleArrayNewThread() {
+		logger.info("Thread {}", Thread.currentThread().getName());
+		Flowable.fromArray(1, 2, 3, 4).subscribeOn(Schedulers.newThread()).observeOn(Schedulers.newThread()).subscribe(
+				i -> logger.info("Thread {}, Integer {}", Thread.currentThread().getName(), i.intValue()),
+				e -> logger.error("failed to process"));
 	}
 
 	public static void simpleAsyncWithEmitted() {
 		Flowable.create((FlowableEmitter<String> s) -> {
 			try {
-				System.out.println("Executing async flowable.");
+				logger.info("Executing async flowable. " + Thread.currentThread().getName());
 				Thread.sleep(1000);
-				System.out.println("Finished async flowable.");
+				logger.info("Finished async flowable.");
 			} catch (Exception e) {
 			}
-			s.onNext("emitted");
+			s.onNext("emitted " + Thread.currentThread().getName());
+			s.onNext("emitted 2 " + Thread.currentThread().getName());
 			s.onComplete();
-		}, BackpressureStrategy.BUFFER).subscribeOn(Schedulers.io()).subscribe(System.out::println);
+		}, BackpressureStrategy.BUFFER).subscribeOn(Schedulers.newThread()).subscribe(System.out::println);
 
-		System.out.println("Print finished async method.");
+		logger.info("Print finished async method.");
 		try {
 			Thread.sleep(10000);
 		} catch (InterruptedException e) {
-			e.printStackTrace();
+			logger.error("Interrupted thread.", e);
 		}
 	}
 
 	public static void simpleAsyncAPICalls() {
 		String test = "";
-		System.out.println("Starting async api");
+		logger.info("Starting async api");
 		Flowable.create(new FlowableOnSubscribe<String>() {
 			@Override
 			public void subscribe(FlowableEmitter<String> e) throws Exception {
-				makeCall("http://localhost:8080/jcg/service/stream/no", test);
+				makeCallString("http://localhost:8080/jcg/service/stream/no");
+				logger.info("emitted thread" + Thread.currentThread().getName());
 			}
 		}, BackpressureStrategy.BUFFER).subscribeOn(Schedulers.io()).subscribe(System.out::println);
 
-		System.out.println("Ending async api");
+		logger.info("Ending async api");
 
+	}
+
+	public static void multipleAsyncAPICalls() {
+		logger.info("Thread {}", Thread.currentThread().getName());
+		logger.info("Starting async api");
+		Flowable.fromArray("http://localhost:8080/jcg/service/stream/no", "http://localhost:8080/jcg/service/stream/no",
+				"http://localhost:8080/jcg/service/stream/no", "http://localhost:8080/jcg/service/stream/no")
+				.map(new Function<String, String>() {
+					@Override
+					public String apply(String t) throws Exception {
+						makeCallString(t);
+						return Thread.currentThread().getName();
+					}
+				}).subscribeOn(Schedulers.newThread()).subscribe(System.out::println);
+		logger.info("Ending async api");
+	}
+
+	public static void multipleAsyncAPICallsWithThreads() {
+		logger.info("Thread {}", Thread.currentThread().getName());
+		logger.info("Starting async api");
+		Flowable.fromArray("http://localhost:8080/jcg/service/stream/no", "http://localhost:8080/jcg/service/stream/no",
+				"http://localhost:8080/jcg/service/stream/no", "http://localhost:8080/jcg/service/stream/no")
+				.flatMap(new Function<String, Publisher<String>>() {
+					@Override
+					public Publisher<String> apply(String t) throws Exception {
+						logger.info("Publisher Thread {}", Thread.currentThread().getName());
+						return Flowable.just(t);
+					}
+				}).subscribeOn(Schedulers.newThread()).doOnNext(new Consumer<String>() {
+					@Override
+					public void accept(String t) throws Exception {
+						logger.info("Consumer Thread {}", Thread.currentThread().getName());
+						makeCallString(t);
+					}
+				}).subscribe(System.out::println);
+		logger.info("Ending async api");
+	}
+
+	public static void multipleAsyncAPICallsWithThreads2() {
+		logger.info("Thread {}", Thread.currentThread().getName());
+		logger.info("Starting async api");
+		Observable
+				.just("http://localhost:8080/jcg/service/stream/no", "http://localhost:8080/jcg/service/stream/no",
+						"http://localhost:8080/jcg/service/stream/no", "http://localhost:8080/jcg/service/stream/no")
+				.flatMap(new Function<String, ObservableSource<String>>() {
+					@Override
+					public ObservableSource<String> apply(String t) throws Exception {
+						logger.info("Publisher Thread {}", Thread.currentThread().getName());
+						return Observable.just(t);
+					}
+				}).subscribeOn(Schedulers.newThread()).doOnNext(new Consumer<String>() {
+					@Override
+					public void accept(String t) throws Exception {
+						logger.info("Consumer Thread {}", Thread.currentThread().getName());
+						makeCallString(t);
+					}
+				}).subscribe(System.out::println);
+		logger.info("Ending async api");
+	}
+
+	public static void multipleAsyncAPICallsWithThreads3() {
+		Observable
+				.just("http://localhost:8080/jcg/service/stream/no", "http://localhost:8080/jcg/service/stream/no",
+						"http://localhost:8080/jcg/service/stream/no", "http://localhost:8080/jcg/service/stream/no")
+				.flatMap(item -> Observable.just(item).subscribeOn(Schedulers.newThread()).doOnNext(i -> {
+					logger.info(makeCallString(i));
+					logger.info(Thread.currentThread().toString());
+				})).subscribe(System.out::println);
 	}
 
 	public static void flatMapAsyncAPICalls() {
 		String test = "";
-		System.out.println("Starting async api");
+		logger.info("Starting async api");
 
 		Observable<String> result = Observable.fromArray("1", "2", "3");
 		Observable<String> result2 = Observable.fromArray(returnList("http://localhost:8080/jcg/service/stream/no"));
@@ -105,7 +198,7 @@ public class RxJavaExampleAdvanced {
 	@SuppressWarnings("unchecked")
 	public static void flatMapAsyncAPICalls2() {
 		String test = "";
-		System.out.println("Starting async api");
+		logger.info("Starting async api");
 
 		List<String> list = null;
 		String[] strList = new String[0];
@@ -124,7 +217,7 @@ public class RxJavaExampleAdvanced {
 	@SuppressWarnings("unchecked")
 	public static void flatMapAsyncAPICalls3() {
 		String test = "";
-		System.out.println("Starting async api");
+		logger.info("Starting async api");
 
 		List<String> list = null;
 		String[] strList = new String[0];
@@ -136,7 +229,7 @@ public class RxJavaExampleAdvanced {
 		Flowable<String> result4 = Flowable.zip(result, result2, new BiFunction<String, String, String>() {
 			@Override
 			public String apply(String t1, String t2) throws Exception {
-				System.out.println("Func: " + t1 + t2);
+				logger.info("Func: " + t1 + t2);
 				return t1 + t2;
 			}
 
@@ -156,7 +249,7 @@ public class RxJavaExampleAdvanced {
 		}, new Action() {
 			@Override
 			public void run() throws Exception {
-				System.out.println("Done");
+				logger.info("Done");
 			}
 		});
 
@@ -165,7 +258,7 @@ public class RxJavaExampleAdvanced {
 
 			@Override
 			public void accept(String t) throws Exception {
-				System.out.println("C-Entry: " + t);
+				logger.info("C-Entry: " + t);
 
 			}
 
@@ -190,7 +283,7 @@ public class RxJavaExampleAdvanced {
 
 			@Override
 			public void onComplete() {
-				System.out.println("Done");
+				logger.info("Done");
 			}
 
 		};
@@ -199,12 +292,12 @@ public class RxJavaExampleAdvanced {
 		// Flowable.fromArray(1, 2, 3, 4).subscribe(i ->
 		// System.out.printf("iEntry %d\n", i),
 		// e -> System.err.printf("iFailed to process: %s\n", e), () ->
-		// System.out.println("iDone"));
+		// logger.info("iDone"));
 
 	}
 
 	public static void streamObserable2() throws URISyntaxException, IOException, InterruptedException {
-		System.out.println("---- executeStreamingViaObservableHttpWithForEach");
+		logger.info("---- executeStreamingViaObservableHttpWithForEach");
 		CloseableHttpAsyncClient httpclient = HttpAsyncClients.createDefault();
 		httpclient.start();
 
@@ -225,22 +318,21 @@ public class RxJavaExampleAdvanced {
 
 							@Override
 							public String call(byte[] bb) {
-								System.out.println("timestamp inner "
+								logger.info("timestamp inner "
 										+ SimpleDateFormat.getDateTimeInstance().format(new Date().getTime()));
-								System.out.println("counter: " + RxJavaExample3.counter++);
+								logger.info("counter: " + RxJavaExample3.counter++);
 								return new String(bb);
 							}
 
 						});
 					}
-				}).buffer(5, TimeUnit.SECONDS, 5, rx.schedulers.Schedulers.io()).subscribeOn(rx.schedulers.Schedulers.io())
-				.subscribe(new Action1<List<String>>() {
+				}).buffer(5, TimeUnit.SECONDS, 5, rx.schedulers.Schedulers.io())
+				.subscribeOn(rx.schedulers.Schedulers.io()).subscribe(new Action1<List<String>>() {
 
 					@Override
 					public void call(List<String> resp) {
-						System.out.println(
-								"timestamp " + SimpleDateFormat.getDateTimeInstance().format(new Date().getTime()));
-						System.out.println(resp.toString());
+						logger.info("timestamp " + SimpleDateFormat.getDateTimeInstance().format(new Date().getTime()));
+						logger.info(resp.toString());
 					}
 				});
 
@@ -250,7 +342,13 @@ public class RxJavaExampleAdvanced {
 	private static <T> T makeCall(String URI, T clazz) {
 		RestTemplate restTemplate = new RestTemplate();
 		T result = (T) restTemplate.getForObject(URI, clazz.getClass());
-		// System.out.println(result.toString());
+		// logger.info(result.toString());
+		return result;
+	}
+
+	private static String makeCallString(String URI) {
+		RestTemplate restTemplate = new RestTemplate();
+		String result = restTemplate.getForObject(URI, String.class);
 		return result;
 	}
 
@@ -260,7 +358,7 @@ public class RxJavaExampleAdvanced {
 		converters.add(new MappingJackson2HttpMessageConverter());
 		restTemplate.setMessageConverters(converters);
 		Object[] result = restTemplate.getForObject(URI, Object[].class);
-		// System.out.println(result.toString());
+		// logger.info(result.toString());
 		return Arrays.asList(result);
 	}
 
