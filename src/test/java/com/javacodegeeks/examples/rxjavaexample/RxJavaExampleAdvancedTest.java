@@ -24,23 +24,6 @@ public class RxJavaExampleAdvancedTest {
 	}
 	
 	@Test
-	public void testSimpleAsyncArrayIo() throws InterruptedException {
-		RxJavaExampleAdvanced.simpleArrayIo();
-		Thread.sleep(3000);
-	}
-	
-	@Test
-	public void testSimpleAsyncArrayNewThread() throws InterruptedException {
-		RxJavaExampleAdvanced.simpleArrayNewThread();
-		Thread.sleep(3000);
-	}
-	
-	@Test
-	public void testSimpleAsyncEmmitted() {
-		RxJavaExampleAdvanced.simpleAsyncWithEmitted();
-	}
-	
-	@Test
 	public void testSimpleAsyncAPICalls() throws InterruptedException {
 		RxJavaExampleAdvanced.simpleAsyncAPICalls();
 		Thread.sleep(3000);
@@ -54,33 +37,20 @@ public class RxJavaExampleAdvancedTest {
 	
 	@Test
 	public void testMultipleAsyncAPICallsWithThreads() throws InterruptedException {
-		RxJavaExampleAdvanced.multipleAsyncAPICallsWithThreads3();
+		RxJavaExampleAdvanced.multipleAsyncAPICallsWithAllNewThreads();
 		Thread.sleep(3000);
 	}
 	
 	@Test
-	public void testFlatMapAsyncAPICalls() throws InterruptedException {
-		RxJavaExampleAdvanced.flatMapAsyncAPICalls();
+	public void flatMapZipAsyncAPICalls() throws InterruptedException {
+		RxJavaExampleAdvanced.flatMapZipAsyncAPICalls();
 		Thread.sleep(3000);
 	}
 	
 	@Test
-	public void testFlatMapAsyncAPICalls2() throws InterruptedException {
-		RxJavaExampleAdvanced.flatMapAsyncAPICalls2();
-		Thread.sleep(3000);
-	}
-
-	@Test
-	public void testFlatMapAsyncAPICalls3() throws InterruptedException {
-		RxJavaExampleAdvanced.flatMapAsyncAPICalls3();
-		Thread.sleep(3000);
-	}
-	
-	
-	@Test
-	public void testEventStreamsAPI2() throws InterruptedException, IOException, URISyntaxException {
-		RxJavaExampleAdvanced.streamObserable2();
-		Thread.sleep(6000);
+	public void testEventStreamsAPI() throws InterruptedException, IOException, URISyntaxException {
+		RxJavaExampleAdvanced.streamObserable();
+		Thread.sleep(25000);
 	}
 	
 
